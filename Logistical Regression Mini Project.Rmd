@@ -1,0 +1,125 @@
+---
+title: "Logistic Regression Mini-Project"
+author: "Carl Larson"
+date: "2/2/2018"
+output: pdf_document
+---
+
+To load the data of interest, the National Health Interview Survey:
+
+```{r}
+
+NH11 <- readRDS("/Users/EagleFace/Documents/!logistic_regression/dataSets/NatHealth2011.rds")
+
+labs <- attributes(NH11)$labels
+
+```
+
+First to use logistic regression to look at the relationship of hypertension as a function of age, sex, sleep, and BMI.
+
+```{r}
+
+str(NH11$hypev) # checking structure
+
+levels(NH11$hypev) # checking levels
+
+# Swaps in NA in for any missing value
+NH11$hypev <- factor(NH11$hypev, levels=c("2 No", "1 Yes")) 
+
+#Running the regression
+hyp.out <- glm(hypev ~ age_p + sex + sleep + bmi,
+               data = NH11, family = "binomial")
+coef(summary(hyp.out))
+
+```
+
+These are coming out in log odds, so a transformation is needed to make these results more readily interprable. 
+
+
+```{r}
+hyp.out.tab <- coef(summary(hyp.out))
+hyp.out.tab[, "Estimate"] <- exp(coef(hyp.out))
+hyp.out.tab
+
+```
+
+This is showing high z values meaning we can reject the null hypothesis that these variables have nothing to do with the predicted variable, hypertension. It's showing that the strongest correlation of risk of hypertension is with BMI, and age is nearly as good a predictor. Sleep was also a good predictor, and sex was the worst predictor.
+
+Next we are asking the question: 
+
+##How much more likely is a 63 year old woman to have hypertension than a woman of age 33
+
+```{r}
+
+#Creating a bespoke dataset to use for this
+predDat <- with(NH11,
+                expand.grid(age_p = c(33, 63),
+                            sex = "2 Female",
+                            bmi = mean(sleep, na.rm = TRUE),
+                            sleep = mean(sleep, na.rm = TRUE)))
+
+#Predicting hypertension at these age levels
+cbind(predDat, predict(hyp.out, type = "response",
+                       se.fit = TRUE, interval = "confidence",
+                       newdata = predDat))
+
+
+```
+
+
+They are saying it should show 13% probability for 33 yrs & 48% for 63 yrs. Noting the code doesn't really query that data, it seems to try to predict hypertension off sleep and bmi, which may be interesting, but the problem was literally asking something the difference in likelihood between getting hypertension between 33 year olds and 63 year olds. 
+
+Sleep and hypertension look like bad predictors of hypertension for 33 year olds, but decent predictors for 63 year olds. This makes sense too, and something that nuanced would need longitudinal backup to see if 33 year olds with worse sleep and bmi were more likely to develop hypertension by the time they were 63. 
+
+It seems this question could have just taken the proportion of each group that had hypertension and call that the expected value, but trying to "predict" anything off this snapshot would be premature.
+
+
+```{r}
+
+library(effects)
+plot(allEffects(hyp.out))
+
+````
+
+Next we are asked to conduct a logistical regression on "ever worked" predicted by age and marital status. 
+
+##1. Use glm to conduct a logistic regression to predict ever worked using age and marital status
+
+Just intuitively, it seems there should be a loose correlation for marital status with married people being more likely to have worked ever than non-married people, just because those groups also skew by age, which would be a hidden controlling variable. 
+
+```{r}
+#First to look at the structure of our variables.
+
+str(NH11$r_maritl)
+levels(NH11$r_maritl)
+length(NH11$r_maritl)
+
+str(NH11$age_p)
+length(NH11$age_p)
+
+str(NH11$everwrk)
+levels(NH11$everwrk)
+length(NH11$everwrk)
+```
+
+We can see there may be a significant amount of "NA" values for the output variable, ever worked. There are 5 different possible factor outputs for that variable, and it seems likely that they will all correlate heavily with age, and each other. I am intuitively thinking that the older people who have worked in higher proportions will have answered "1 Yes" the most. 
+I still want to combine the non-yes responses to the everworked variable. 
+
+Now to try to make the model.
+
+```{r}
+unworked.pred <- glm(everwrk ~ age_p + r_maritl,
+                     data=NH11, family="binomial")
+coef(summary(unworked.pred))
+
+```
+
+
+##2. Predict the probability of working for each level of marital status
+
+Based on these results it seems, sadly, that widows are the most likely marital staus group to have worked already, and never married are the most likely to never have worked. 
+
+This does make some morbid sense, as widows are usually older and people who have never worked also are more likely to never have married and just be a young person. 
+
+Both of those values had low Pr(>|z|) values, meaning a low likelihood of the null hypothesis being true, meaning we are very sure that those variables essentially aren't wrong on predicting "ever worked" status.
+
